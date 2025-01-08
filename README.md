@@ -156,7 +156,7 @@ Copying config 3bbb6e1f9b done   |
 Writing manifest to image destination
 ~~~
 
-Now that we have an image let's test it out on the system where we have compatible RDMA hardware configured.  I am using the same setup as I used in a previous write up so I am going to skip the details about setting up a service account and providing the privileges to it.   We will however create our workload pod yaml which we will use to deploy the image.
+Now that we have an image let's test it out on the system where we have compatible RDMA hardware configured.  I am using the same setup as I used in a previous write up so I am going to skip the details about setting up a service account and providing the privileges to it.   We will however create our workload pod yamls which we will use to deploy the image.
 
 ~~~bash
 cat >>EOF >rdma-32-workload.yaml
@@ -172,12 +172,36 @@ spec:
     kubernetes.io/hostname: nvd-srv-32.nvidia.eng.rdu2.dc.redhat.com
   serviceAccountName: rdma
   containers:
-  - image: quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.1
+  - image: quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.2
     name: rdma-32-workload
-    command:
-      - sh
-      - -c
-      - sleep inf
+    securityContext:
+      privileged: true
+      capabilities:
+        add: [ "IPC_LOCK" ]
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+        rdma/rdma_shared_device_eth: 1
+      requests:
+        nvidia.com/gpu: 1
+        rdma/rdma_shared_device_eth: 1
+EOF
+
+$ $ cat >>EOF >rdma-33-workload.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rdma-eth-33-workload
+  namespace: default
+  annotations:
+    k8s.v1.cni.cncf.io/networks: rdmashared-net
+spec:
+  nodeSelector: 
+    kubernetes.io/hostname: nvd-srv-33.nvidia.eng.rdu2.dc.redhat.com
+  serviceAccountName: rdma
+  containers:
+  - image: quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.2
+    name: rdma-33-workload
     securityContext:
       privileged: true
       capabilities:
@@ -192,4 +216,309 @@ spec:
 EOF
 ~~~
 
-Next we can deploy the container.
+Next we can deploy the containers.
+
+~~~bash
+$ oc create -f rdma-32-workload.yaml 
+pod/rdma-eth-32-workload created
+
+$ oc create -f rdma-33-workload.yaml 
+pod/rdma-eth-33-workload created
+~~~
+
+Validate the pods are running.
+
+~~~bash
+$ oc get pods
+NAME                   READY   STATUS    RESTARTS   AGE
+rdma-eth-32-workload   1/1     Running   0          51s
+rdma-eth-33-workload   1/1     Running   0          47s
+~~~
+
+Now open two terminals and `rsh` into each pod in one of the terminals and validate that the perftest commands are present.  We can also get the ipaddress of our pod inside the containers.
+
+~~~bash
+$ oc rsh rdma-eth-32-workload
+sh-5.1# ib
+ib_atomic_bw         ib_read_lat          ib_write_bw          ibcacheedit          ibfindnodesusing.pl  iblinkinfo           ibping               ibroute              ibstatus             ibtracert            
+ib_atomic_lat        ib_send_bw           ib_write_lat         ibccconfig           ibhosts              ibnetdiscover        ibportstate          ibrouters            ibswitches           
+ib_read_bw           ib_send_lat          ibaddr               ibccquery            ibidsverify.pl       ibnodes              ibqueryerrors        ibstat               ibsysstat            
+sh-5.1# ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0@if96: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1400 qdisc noqueue state UP group default 
+    link/ether 0a:58:0a:83:00:34 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.131.0.52/23 brd 10.131.1.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::858:aff:fe83:34/64 scope link 
+       valid_lft forever preferred_lft forever
+3: net1@if78: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 32:1a:83:4a:e2:39 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 192.168.2.1/24 brd 192.168.2.255 scope global net1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::301a:83ff:fe4a:e239/64 scope link 
+       valid_lft forever preferred_lft forever
+
+$ oc rsh rdma-eth-33-workload
+sh-5.1# ib
+ib_atomic_bw         ib_read_lat          ib_write_bw          ibcacheedit          ibfindnodesusing.pl  iblinkinfo           ibping               ibroute              ibstatus             ibtracert            
+ib_atomic_lat        ib_send_bw           ib_write_lat         ibccconfig           ibhosts              ibnetdiscover        ibportstate          ibrouters            ibswitches           
+ib_read_bw           ib_send_lat          ibaddr               ibccquery            ibidsverify.pl       ibnodes              ibqueryerrors        ibstat               ibsysstat            
+sh-5.1# ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0@if105: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1400 qdisc noqueue state UP group default 
+    link/ether 0a:58:0a:80:02:3d brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.128.2.61/23 brd 10.128.3.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::858:aff:fe80:23d/64 scope link 
+       valid_lft forever preferred_lft forever
+3: net1@if82: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 22:3e:02:c9:d0:87 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 192.168.2.2/24 brd 192.168.2.255 scope global net1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::203e:2ff:fec9:d087/64 scope link 
+       valid_lft forever preferred_lft forever
+~~~
+
+Now let's run the RDMA perftest with the `--use_cuda` switch.  Again we will need to have two `rsh` sessions one on each pod.  In the first terminal we can run the following.
+
+~~~bash
+sh-5.1# ib_write_bw -R -T 41 -s 65536 -F -x 3 -m 4096 --report_gbits -q 16 -D 60  -d mlx5_1 -p 10000 --source_ip 192.168.2.1 --use_cuda=0
+ WARNING: BW peak won't be measured in this run.
+Perftest doesn't supports CUDA tests with inline messages: inline size set to 0
+
+************************************
+* Waiting for client to connect... *
+************************************
+~~~~
+
+In the second terminal we will run the following command which will dump the output.
+
+~~~bash
+sh-5.1# ib_write_bw -R -T 41 -s 65536 -F -x 3 -m 4096 --report_gbits -q 16 -D 60  -d mlx5_1 -p 10000 --source_ip 192.168.2.2 --use_cuda=0 192.168.2.1
+ WARNING: BW peak won't be measured in this run.
+Perftest doesn't supports CUDA tests with inline messages: inline size set to 0
+Requested mtu is higher than active mtu 
+Changing to active mtu - 3
+initializing CUDA
+Listing all CUDA devices in system:
+CUDA device 0: PCIe address is E1:00
+
+Picking device No. 0
+[pid = 4101, dev = 0] device name = [NVIDIA A40]
+creating CUDA Ctx
+making it the current CUDA Ctx
+CUDA device integrated: 0
+cuMemAlloc() of a 2097152 bytes GPU buffer
+allocated GPU buffer address at 00007f3dfa600000 pointer=0x7f3dfa600000
+---------------------------------------------------------------------------------------
+                    RDMA_Write BW Test
+ Dual-port       : OFF		Device         : mlx5_1
+ Number of qps   : 16		Transport type : IB
+ Connection type : RC		Using SRQ      : OFF
+ PCIe relax order: ON		Lock-free      : OFF
+ ibv_wr* API     : ON		Using DDP      : OFF
+ TX depth        : 128
+ CQ Moderation   : 1
+ Mtu             : 1024[B]
+ Link type       : Ethernet
+ GID index       : 3
+ Max inline data : 0[B]
+ rdma_cm QPs	 : ON
+ Data ex. method : rdma_cm 	TOS    : 41
+---------------------------------------------------------------------------------------
+ local address: LID 0000 QPN 0x00c6 PSN 0x2986aa
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00c7 PSN 0xa0ef83
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00c8 PSN 0x74badb
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00c9 PSN 0x287d57
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00ca PSN 0xf5b155
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00cb PSN 0x6cc15d
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00cc PSN 0x3730c2
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00cd PSN 0x74d75d
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00ce PSN 0x51a707
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00cf PSN 0x987246
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00d0 PSN 0xa334a8
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00d1 PSN 0x5d8f52
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00d2 PSN 0xc42ca0
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00d3 PSN 0xf43696
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00d4 PSN 0x43f9d2
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ local address: LID 0000 QPN 0x00d5 PSN 0xbc4d64
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00c6 PSN 0xb1023e
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00c7 PSN 0xc78587
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00c8 PSN 0x5a328f
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00c9 PSN 0x582cfb
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00cb PSN 0x40d229
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00cc PSN 0x5833a1
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00cd PSN 0xcfefb6
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00ce PSN 0xfd5d41
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00cf PSN 0xed811b
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00d0 PSN 0x5244ca
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00d1 PSN 0x946edc
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00d2 PSN 0x4e0f76
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00d3 PSN 0x7b13f4
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00d4 PSN 0x1a2d5a
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00d5 PSN 0xd22346
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00d6 PSN 0x722bc8
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+---------------------------------------------------------------------------------------
+ #bytes     #iterations    BW peak[Gb/sec]    BW average[Gb/sec]   MsgRate[Mpps]
+ 65536      10384867         0.00               181.46 		     0.346100
+---------------------------------------------------------------------------------------
+deallocating GPU buffer 00007f3dfa600000
+destroying current CUDA Ctx
+~~~
+
+And if we return to the first terminal we should see it updated with the same output.
+
+~~~bash
+sh-5.1# ib_write_bw -R -T 41 -s 65536 -F -x 3 -m 4096 --report_gbits -q 16 -D 60  -d mlx5_1 -p 10000 --source_ip 192.168.2.1 --use_cuda=0
+ WARNING: BW peak won't be measured in this run.
+Perftest doesn't supports CUDA tests with inline messages: inline size set to 0
+
+************************************
+* Waiting for client to connect... *
+************************************
+Requested mtu is higher than active mtu 
+Changing to active mtu - 3
+initializing CUDA
+Listing all CUDA devices in system:
+CUDA device 0: PCIe address is 61:00
+
+Picking device No. 0
+[pid = 4109, dev = 0] device name = [NVIDIA A40]
+creating CUDA Ctx
+making it the current CUDA Ctx
+CUDA device integrated: 0
+cuMemAlloc() of a 2097152 bytes GPU buffer
+allocated GPU buffer address at 00007f8bca600000 pointer=0x7f8bca600000
+---------------------------------------------------------------------------------------
+                    RDMA_Write BW Test
+ Dual-port       : OFF		Device         : mlx5_1
+ Number of qps   : 16		Transport type : IB
+ Connection type : RC		Using SRQ      : OFF
+ PCIe relax order: ON		Lock-free      : OFF
+ ibv_wr* API     : ON		Using DDP      : OFF
+ CQ Moderation   : 1
+ Mtu             : 1024[B]
+ Link type       : Ethernet
+ GID index       : 3
+ Max inline data : 0[B]
+ rdma_cm QPs	 : ON
+ Data ex. method : rdma_cm 	TOS    : 41
+---------------------------------------------------------------------------------------
+ Waiting for client rdma_cm QP to connect
+ Please run the same command with the IB/RoCE interface IP
+---------------------------------------------------------------------------------------
+ local address: LID 0000 QPN 0x00c6 PSN 0xb1023e
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00c7 PSN 0xc78587
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00c8 PSN 0x5a328f
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00c9 PSN 0x582cfb
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00cb PSN 0x40d229
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00cc PSN 0x5833a1
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00cd PSN 0xcfefb6
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00ce PSN 0xfd5d41
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00cf PSN 0xed811b
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00d0 PSN 0x5244ca
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00d1 PSN 0x946edc
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00d2 PSN 0x4e0f76
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00d3 PSN 0x7b13f4
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00d4 PSN 0x1a2d5a
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00d5 PSN 0xd22346
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ local address: LID 0000 QPN 0x00d6 PSN 0x722bc8
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:32
+ remote address: LID 0000 QPN 0x00c6 PSN 0x2986aa
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00c7 PSN 0xa0ef83
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00c8 PSN 0x74badb
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00c9 PSN 0x287d57
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00ca PSN 0xf5b155
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00cb PSN 0x6cc15d
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00cc PSN 0x3730c2
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00cd PSN 0x74d75d
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00ce PSN 0x51a707
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00cf PSN 0x987246
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00d0 PSN 0xa334a8
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00d1 PSN 0x5d8f52
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00d2 PSN 0xc42ca0
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00d3 PSN 0xf43696
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00d4 PSN 0x43f9d2
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+ remote address: LID 0000 QPN 0x00d5 PSN 0xbc4d64
+ GID: 00:00:00:00:00:00:00:00:00:00:255:255:10:06:145:33
+---------------------------------------------------------------------------------------
+ #bytes     #iterations    BW peak[Gb/sec]    BW average[Gb/sec]   MsgRate[Mpps]
+ 65536      10384867         0.00               181.46 		     0.346100
+---------------------------------------------------------------------------------------
+deallocating GPU buffer 00007f8bca600000
+destroying current CUDA Ctx
+~~~
+
+Hopefully this helped demonstrate a much cleaner and automated way to build a perftest container with cuda enabled.
