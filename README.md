@@ -161,7 +161,7 @@ Writing manifest to image destination
 Now that we have an image let's test it out on the system where we have compatible RDMA hardware configured.  I am using the same setup as I used in a previous write up so I am going to skip the details about setting up a service account and providing the privileges to it.   We will however create our workload pod yamls which we will use to deploy the image.
 
 ~~~bash
-cat >>EOF >rdma-32-workload.yaml
+cat <<EOF >rdma-32-workload.yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -189,7 +189,7 @@ spec:
         rdma/rdma_shared_device_eth: 1
 EOF
 
-$ $ cat >>EOF >rdma-33-workload.yaml
+$ cat <<EOF >rdma-33-workload.yaml
 apiVersion: v1
 kind: Pod
 metadata:
