@@ -79,7 +79,7 @@ cd /root
 # Configure and install cuda-toolkit
 dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
 dnf clean all
-dnf -y install cuda-toolkit-12-6
+dnf -y install cuda-toolkit-12-8
 
 # Export CUDA library paths
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
@@ -105,7 +105,7 @@ EOF
 Next we can use the dockerfile we just created to build the base image.
 
 ~~~bash
-$ podman build -f dockerfile.tools -t quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.2
+$ podman build -f dockerfile.tools -t quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.3
 STEP 1/10: FROM registry.access.redhat.com/ubi9/ubi:latest
 STEP 2/10: WORKDIR /root
 --> Using cache 75f163f12503272b83e1137f7c1903520f84493ffe5aec0ef32ece722bd0d815
@@ -136,16 +136,16 @@ This system is not registered with an entitlement server. You can use subscripti
 STEP 9/10: COPY entrypoint.sh /root/entrypoint.sh
 --> aeb03bf74673
 STEP 10/10: ENTRYPOINT ["/bin/bash", "/root/entrypoint.sh"]
-COMMIT quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.2
+COMMIT quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.3
 --> 45c2113e5082
-Successfully tagged quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.2
+Successfully tagged quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.3
 45c2113e5082fb2f548b9e1b16c17524184c4079e2db77399519cf29829af1e7
 ~~~
 
 Once the image is created we can push it to our favorite registry.
 
 ~~~bash
-$ podman push quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.2
+$ podman push quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.3
 Getting image source signatures
 Copying blob 62ee1c6c02d5 done   | 
 Copying blob 6027214db22e done   | 
@@ -174,7 +174,7 @@ spec:
     kubernetes.io/hostname: nvd-srv-32.nvidia.eng.rdu2.dc.redhat.com
   serviceAccountName: rdma
   containers:
-  - image: quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.2
+  - image: quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.3
     name: rdma-32-workload
     securityContext:
       privileged: true
@@ -202,7 +202,7 @@ spec:
     kubernetes.io/hostname: nvd-srv-33.nvidia.eng.rdu2.dc.redhat.com
   serviceAccountName: rdma
   containers:
-  - image: quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.2
+  - image: quay.io/redhat_emp1/ecosys-nvidia/gpu-tools:0.0.3
     name: rdma-33-workload
     securityContext:
       privileged: true
