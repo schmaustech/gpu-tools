@@ -294,7 +294,7 @@ sh-5.1# ip a
 Now let's run the RDMA perftest with the `--use_cuda` switch.  Again we will need to have two `rsh` sessions one on each pod.  In the first terminal we can run the following.
 
 ~~~bash
-sh-5.1# ib_write_bw -R -T 41 -s 65536 -F -x 3 -m 4096 --report_gbits -q 16 -D 60  -d mlx5_1 -p 10000 --source_ip 192.168.2.1 --use_cuda=0
+sh-5.1# ib_write_bw -R -T 41 -s 65536 -F -x 3 -m 4096 --report_gbits -q 16 -D 60  -d mlx5_1 -p 10000 --source_ip 192.168.2.1 --use_cuda=0 --use_cuda_dmabuf
  WARNING: BW peak won't be measured in this run.
 Perftest doesn't supports CUDA tests with inline messages: inline size set to 0
 
